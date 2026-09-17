@@ -529,7 +529,7 @@ with tab1:
         if food_identity == "聘雇人員":
             combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無 (聘雇人員不適用)"], disabled=True)
         else:
-            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"], "無")
+            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)", "無"])
             
         active_combat_days = st.number_input(
             "應支領戰加天數", 
