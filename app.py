@@ -16,10 +16,24 @@ st.set_page_config(
 )
 
 st.title("🦦 浯金獺算 (有錢好算)")
-st.caption("""這是地加、副食費與戰加的計算機，會說明公式算法，
-            也是互相學習的地方~
-            薪餉(地加、戰加)破月計算：round(月支額 ÷ 當月天數) × 應領天數。
-            副食費破月計算：無條件捨去至小數第2位後逐次四捨五入至整數。""")
+st.caption("這是地加、副食費與戰加的計算機，會說明公式算法，也是互相學習的地方~")
+
+with st.expander("💡 薪餉與副食費破月計算公式說明與範例"):
+    st.markdown("""
+    **1. 薪餉 (地域加給、戰鬥部隊加給) 破月計算：**
+    * **計算公式：** `round(月支數額 ÷ 當月總天數) × 應領天數`
+    * **範例：** 9 月（共 30 天）外島三級加給 $9,790，支領 13 天：
+      * 每日日額：`round(9,790 ÷ 30) = round(326.333...)` → **$326**
+      * 應領金額：`326 × 13` = **$4,238**
+
+    ---
+    **2. 地區副食費破月計算：**
+    * **計算公式：** `無條件捨去至小數第 2 位 → 逐次四捨五入至整數`
+    * **範例：** 9 月（共 30 天）志願役外島副食費 $2,920，支領 13 天：
+      * 原始算式：`2,920 ÷ 30 × 13 = 1,265.3333...`
+      * 取至小數第 2 位（無條件捨去）：`1,265.33`
+      * 四捨五入至小數第 1 位：`1,265.3` → 四捨五入至整數：**$1,265**
+    """)
 
 # 新增：iOS 與 Android 加入桌面 App 操作說明
 with st.expander("📱 如何將此網頁「加入主畫面」像 APP 一樣使用？"):
@@ -370,7 +384,8 @@ def calculate_amount_from_format(user_message: str) -> str:
     month_match = re.search(r"支領年月.*[：:]\s*(\d+)", user_message)
     active_days_match = re.search(r"應支領天數[：:]\s*(\d+)", user_message)
     region_lvl_match = re.search(r"地加等級類別[：:]\s*(.+)", user_message)
-    identity_match = re.search(r"身分別[：:]\s*(.+)", user_message)
+    reg_identity_match = re.search(r"地加身分別[：:]\s*(.+)", user_message) or re.search(r"身分別[：:]\s*(.+)", user_message)
+    food_identity_match = re.search(r"副食費身分別[：:]\s*(.+)", user_message)
     food_region_match = re.search(r"地區性副食費類別[：:]\s*(.+)", user_message)
     
     combat_match = re.search(r"戰鬥部隊加給類別[：:]\s*(.+)", user_message)
@@ -380,7 +395,7 @@ def calculate_amount_from_format(user_message: str) -> str:
     issued_food_match = re.search(r"已發副食費(?:金額)?[：:]\s*(\d+)", user_message)
     issued_combat_match = re.search(r"已發戰加(?:金額)?[：:]\s*(\d+)", user_message)
 
-    if not all([month_match, active_days_match, region_lvl_match, identity_match, food_region_match]):
+    if not all([month_match, active_days_match, region_lvl_match, reg_identity_match, food_region_match]):
         return None
 
     month_str = month_match.group(1).strip()
@@ -398,7 +413,8 @@ def calculate_amount_from_format(user_message: str) -> str:
 
     active_days = int(active_days_match.group(1))
     region_lvl_str = region_lvl_match.group(1).strip()
-    identity_raw = identity_match.group(1).strip()
+    reg_identity_raw = reg_identity_match.group(1).strip()
+    food_identity_raw = food_identity_match.group(1).strip() if food_identity_match else reg_identity_raw
     food_region_str = food_region_match.group(1).strip()
 
     active_combat_days = int(combat_days_match.group(1)) if combat_days_match else active_days
@@ -407,9 +423,9 @@ def calculate_amount_from_format(user_message: str) -> str:
     if not (0 < active_days < total_days) or not (0 <= active_combat_days < total_days):
         return f"⚠️ 破月意指非整月支領。應支領天數必須「大於 0 天」且「小於當月總天數 ({total_days} 天)」，請重新輸入。"
 
-    reg_base, matched_reg_name = find_regional_amount(region_lvl_str, identity_raw)
-    food_base, matched_food_name = find_food_amount(food_region_str, identity_raw)
-    combat_base, matched_combat_name = find_combat_amount(combat_lvl_str, identity_raw)
+    reg_base, matched_reg_name = find_regional_amount(region_lvl_str, reg_identity_raw)
+    food_base, matched_food_name = find_food_amount(food_region_str, food_identity_raw)
+    combat_base, matched_combat_name = find_combat_amount(combat_lvl_str, food_identity_raw)
 
     reg_should, reg_daily, reg_formula = calc_round_allowance(reg_base, total_days, active_days)
     food_should, food_formula = calc_food_subsidy(food_base, total_days, active_days)
@@ -434,10 +450,11 @@ def calculate_amount_from_format(user_message: str) -> str:
 • 戰鬥加給差額：${issued_combat:,} - ${combat_should:,} = ${diff_combat:,} ({'應追扣' if diff_combat > 0 else '應補發' if diff_combat < 0 else '無差額'})"""
 
     total_should = reg_should + food_should + combat_should
-    normalized_name = normalize_identity(identity_raw)
+    normalized_reg_name = normalize_identity(reg_identity_raw)
 
     reply_msg = f"""【民國 {month_str} 月破月金額計算結果】
-身分別：{identity_raw}{f' (匹配至：{normalized_name})' if identity_raw != normalized_name else ''}
+地加身分別：{reg_identity_raw}{f' (匹配至：{normalized_reg_name})' if reg_identity_raw != normalized_reg_name else ''}
+副食費/戰加身分別：{food_identity_raw}
 地加天數: {active_days} / {total_days} 天 | 戰加天數: {active_combat_days} / {total_days} 天
 
 [1. 地域加給 ({matched_reg_name})]
@@ -512,7 +529,7 @@ with tab1:
         if food_identity == "聘雇人員":
             combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無 (聘雇人員不適用)"], disabled=True)
         else:
-            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
+            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"], "無")
             
         active_combat_days = st.number_input(
             "應支領戰加天數", 
@@ -541,7 +558,8 @@ with tab1:
         target_food_region = "無" if food_identity == "聘雇人員" else food_region
         target_combat_lvl = "無" if food_identity == "聘雇人員" else combat_lvl
         fmt_text = f"""支領年月(民國年月)：{month_input}
-身分別：{reg_identity}
+地加身分別：{reg_identity}
+副食費身分別：{food_identity}
 地加等級類別：{region_lvl}
 地區性副食費類別：{target_food_region}
 應支領天數：{active_days}
@@ -560,8 +578,13 @@ ______________
 
 with tab2:
     st.subheader("🗓️ 輸入變動事件與日期")
-    st.info("提示：可直接輸入說明文字，例如：`7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區；9/5結訓，9/6抵達艱苦地區`")
-    event_text = st.text_area("請輸入異動說明內容：", value="7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區", height=120)
+    st.info("提示：可直接輸入說明文字，例如：`7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區；9/5結訓，9/6抵達艱苦地區；9/14因支援抵達艱苦地區`")
+    event_text = st.text_area("請輸入異動說明內容：", value="""7/3離開艱苦地區，
+                                                               7/4受訓，
+                                                               8/17結訓，
+                                                               8/18抵達艱苦地區，
+                                                               9/14因支援抵達艱苦地區
+                                                               請修正填入實際狀況""", height=120)
     
     if st.button("🔍 計算天數", use_container_width=True):
         days_res = process_days_calculation(event_text)
