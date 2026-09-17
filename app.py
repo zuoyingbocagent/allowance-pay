@@ -55,15 +55,16 @@ def normalize_identity(identity_input: str) -> str:
 def find_regional_amount(region_input: str, identity_input: str) -> tuple:
     """匹配地域加給，支援聘雇別名與等級簡寫 (如 OA3)"""
     identity = normalize_identity(identity_input)
-    region_input = region_input.strip().upper()
+    region_clean = re.sub(r'[\(\)\（\）]', '', region_input).strip().upper()
     
-    if "本島" in region_input and "外島" not in region_input and "離島" not in region_input:
-        region_input = "本島-非艱苦地區"
+    if "本島" in region_clean and "外島" not in region_clean and "離島" not in region_clean and "高山" not in region_clean:
+        region_clean = "本島-非艱苦地區"
 
     for reg_group, levels in RATES.get("regional_allowance", {}).items():
         for level_name, id_map in levels.items():
-            level_name_upper = level_name.upper()
-            if region_input in level_name_upper or (len(region_input) >= 2 and region_input in level_name_upper):
+            level_name_upper = re.sub(r'[\(\)\（\）]', '', level_name).upper()
+            # 修正1：修正地域加給雙向字串比對與 JSON Key 匹配
+            if region_clean in level_name_upper or level_name_upper in region_clean:
                 amount = id_map.get(identity, 0)
                 return amount, level_name
     return 0, region_input
@@ -76,7 +77,11 @@ def find_food_amount(food_input: str, identity_input: str) -> tuple:
         
     food_input = food_input.strip()
     subsidy_map = RATES.get("food_subsidy", {})
-    id_key = "義務役官士兵" if "義務" in identity else "志願役官士兵"
+    # 修正1：修正副食費身份別映射，區分義務役官兵與士官
+    if "義務役" in identity:
+        id_key = "義務役官士兵" if "義務役官士兵" in subsidy_map else "義務役"
+    else:
+        id_key = "志願役官士兵"
     sub_map = subsidy_map.get(id_key, subsidy_map.get("志願役官士兵", {}))
     
     # 精準對應副食費類別，長度較長的優先匹配（例如：外離島優先於外島）
@@ -88,15 +93,16 @@ def find_food_amount(food_input: str, identity_input: str) -> tuple:
 
 def find_combat_amount(combat_input: str, identity_input: str) -> tuple:
     """匹配戰鬥部隊加給 (V1, V2, V3)"""
-    combat_input = combat_input.strip().upper()
+    combat_clean = re.sub(r'[\(\)\（\）]', '', combat_input).strip().upper()
     combat_map = RATES.get("combat_unit_allowance", {}).get("志願役官士兵", {})
     
-    if combat_input in ["無", "0", "NONE"]:
+    if combat_clean in ["無", "0", "NONE"]:
         return 0, "無"
 
     for k, v in combat_map.items():
-        k_upper = k.upper()
-        if combat_input in k_upper or (len(combat_input) >= 2 and combat_input in k_upper):
+        k_upper = re.sub(r'[\(\)\（\）]', '', k).upper()
+        # 修正1：去除括號後雙向比對代碼 (如 V1) 與類型名稱
+        if combat_clean in k_upper or k_upper in combat_clean:
             return v, k
     return 0, combat_input
 
@@ -438,9 +444,12 @@ with tab1:
         identity = st.selectbox("身分別", ["志願役官士兵", "義務役官士兵", "聘雇人員"])
         # 修正1：預設為系統當前年月
         month_input = st.text_input("支領年月 (民國年月，如 11502)", value=default_year_month)
+        # 修正2：下拉選單補齊高山等級選項 (高山一級 ~ 高山三級)
         region_lvl = st.selectbox("地加等級類別", [
-            "外島第三級(OA3)", "外島第二級(OA2)", "外島第一級(OA1)", 
-            "離島第三級(OB3)", "離島第二級(OB2)", "離島第一級(OB1)", "本島-非艱苦地區"
+            "外島第三級(OA3)", "外島第二級(OA2)", "外島第一級(OA1)",
+            "離島第三級(OB3)", "離島第二級(OB2)", "離島第一級(OB1)",
+            "高山第四級(OC4)", "高山第三級(OC3)", "高山第二級(OC2)", "高山第一級(OC1)",
+            "本島-非艱苦地區"
         ])
         
         # 聘雇人員無副食費提醒與介面連動
@@ -449,9 +458,9 @@ with tab1:
         else:
             food_region = st.selectbox("地區性副食費類別", ["外離島", "外島", "離島", "本島", "東沙", "南沙"])
             
-        # 修正2：整合 HTML inputmode 屬性以支援行動裝置大數字 9 宮格鍵盤
         active_days = st.number_input("應支領地域加給/副食費天數", min_value=0, max_value=31, value=13)
-        st.html("<script>document.querySelectorAll('input[type=number]').forEach(el => el.setAttribute('inputmode', 'numeric'));</script>")
+        # 修正3：整合包含 text 與 number 輸入框的 inputmode="numeric"，完整支援行動裝置 9 宮格數字鍵盤
+        st.html("<script>document.querySelectorAll('input').forEach(el => el.setAttribute('inputmode', 'numeric'));</script>")
 
     with col2:
         combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
