@@ -16,7 +16,30 @@ st.set_page_config(
 )
 
 st.title("🦦 浯金獺算 (有錢好算)")
-st.caption("金門水獺幫你算，薪餉加給與副食費輕鬆精算！")
+st.caption("這是地加、副食費與戰加的計算機，會說明公式算法，\n
+            也是互相學習的地方~\n
+            薪餉(地加、戰加)破月計算：round(月支額 ÷ 當月天數) × 應領天數。\n
+            副食費破月計算：無條件捨去至小數第2位後逐次四捨五入至整數。)
+
+# 新增：iOS 與 Android 加入桌面 App 操作說明
+with st.expander("📱 如何將此網頁「加入主畫面」像 APP 一樣使用？"):
+    tab_ios, tab_android = st.tabs(["🍎 iOS (iPhone / iPad)", "🤖 Android (安卓)"])
+    
+    with tab_ios:
+        st.markdown("""
+        1. 使用 Safari 瀏覽器開啟本網頁。
+        2. 點擊下方工具列中間的 **分享按鈕** ⎋ (方框朝上箭頭)。
+        3. 向下滑動選單，點選 **「加入主畫面」** (＋號圖示)。
+        4. 點擊右上角 **「新增」**，即可在 iPhone 桌面看到專屬圖示！
+        """)
+        
+    with tab_android:
+        st.markdown("""
+        1. 使用 Chrome 瀏覽器開啟本網頁。
+        2. 點擊右上角 **選單按鈕** ⸠ (三個垂直圓點)。
+        3. 點選 **「加到主畫面」** 或 **「安裝應用程式」**。
+        4. 點擊 **「新增/安裝」**，即可在手機桌面快捷開啟！
+        """)
 
 # ----------------------------------------------------
 # 1. 讀取 rates.json
@@ -87,10 +110,10 @@ def find_food_amount(food_input: str, identity_input: str) -> tuple:
     id_key = "義務役官士兵" if "義務" in identity else "志願役官士兵"
     sub_map = subsidy_map.get(id_key, subsidy_map.get("志願役官士兵", {}))
     
-    # 修正：由長至短排序 Key，確保「本島傷患」、「外離島」等長關鍵字優先精準匹配，避免被「本島」或「外島」截斷
+    # 修正：精準匹配 key，避免 clean_food="本島" 時因為 "本島" in "本島傷患" 誤判為傷患費率
     sorted_keys = sorted(sub_map.keys(), key=len, reverse=True)
     for k in sorted_keys:
-        if k in clean_food or clean_food in k:
+        if k == clean_food or k in clean_food:
             return sub_map[k], k
     return 0, food_input
 
@@ -104,8 +127,11 @@ def find_combat_amount(combat_input: str, identity_input: str) -> tuple:
     v_match = re.search(r'V[1-3]', combat_clean)
     target_v = v_match.group(0) if v_match else combat_clean
 
+    # 修正：依據身分別取得志願役或義務役的戰鬥加給金額（解決義務役抓取到志願役金額問題）
+    identity = normalize_identity(identity_input)
     combat_data = RATES.get("combat_unit_allowance", {})
-    combat_map = combat_data.get("志願役官士兵", combat_data)
+    id_key = "義務役官士兵" if "義務" in identity else "志願役官士兵"
+    combat_map = combat_data.get(id_key, combat_data.get("志願役官士兵", {}))
 
     for k, v in combat_map.items():
         if target_v in k.upper() or k.upper() in target_v or combat_clean in k.upper():
@@ -122,7 +148,7 @@ def calc_round_allowance(monthly_amount: int, total_days: int, active_days: int)
         return 0, 0, "0"
     daily_rate = round(monthly_amount / total_days)
     final_amount = daily_rate * active_days
-    formula_str = f"round({monthly_amount:,} ÷ {total_days}) × {active_days} = {daily_rate:,} × {active_days}"
+    formula_str = f"四捨五入({monthly_amount:,} ÷ {total_days}) × {active_days} = {daily_rate:,} × {active_days}"
     return final_amount, daily_rate, formula_str
 
 def calc_food_subsidy(monthly_amount: int, total_days: int, active_days: int):
@@ -133,7 +159,7 @@ def calc_food_subsidy(monthly_amount: int, total_days: int, active_days: int):
     val_2dp = math.floor(raw_val * 100) / 100.0
     val_1dp = round(val_2dp, 1)
     val_int = int(round(val_1dp))
-    formula_str = f"({monthly_amount:,} ÷ {total_days} × {active_days}) = {raw_val:.3f}... → {val_2dp:.2f} → {val_1dp:.1f} → {val_int:,}"
+    formula_str = f"({monthly_amount:,} ÷ {total_days} × {active_days}) = {raw_val:.3f}... 無條件捨去取小數第2位→ {val_2dp:.2f} 小數點第2位四捨五入至小數點第1位→ {val_1dp:.1f} 小數點第1位四捨五入至整數→ {val_int:,}"
     return val_int, formula_str
 
 # ----------------------------------------------------
@@ -378,8 +404,8 @@ def calculate_amount_from_format(user_message: str) -> str:
     active_combat_days = int(combat_days_match.group(1)) if combat_days_match else active_days
     combat_lvl_str = combat_match.group(1).strip() if combat_match else "無"
 
-    if not (0 < active_days <= total_days) or not (0 <= active_combat_days <= total_days):
-        return f"⚠️ 破月意指非整月支領。應支領天數必須「大於 0 天」且「小於等於當月總天數 ({total_days} 天)」，請重新輸入。"
+    if not (0 < active_days < total_days) or not (0 <= active_combat_days < total_days):
+        return f"⚠️ 破月意指非整月支領。應支領天數必須「大於 0 天」且「小於當月總天數 ({total_days} 天)」，請重新輸入。"
 
     reg_base, matched_reg_name = find_regional_amount(region_lvl_str, identity_raw)
     food_base, matched_food_name = find_food_amount(food_region_str, identity_raw)
@@ -444,16 +470,16 @@ with tab1:
     
     col1, col2 = st.columns(2)
     with col1:
-        identity = st.selectbox("身分別", ["志願役官士兵", "義務役官士兵", "聘雇人員"])
-        # 修正：固定民國年月 5 碼數字，限制最大長度 5，設定 help 提示與 placeholder
+        # 修正：將身分別拆分為地域加給與副食費/戰加專用身分別，精準對應 rates.json 費率
+        reg_identity = st.selectbox("地域加給身分別", ["志願役官士兵", "義務役軍官", "義務役士官", "義務役士兵", "聘雇人員"])
+
         month_input = st.text_input(
             "支領年月 (固定民國年月5碼)", 
             value=default_year_month, 
             max_chars=5, 
-            placeholder="11502",
-            help="請輸入5碼民國年月，例如：11502 代表 115 年 02 月"
+            placeholder="11509",
+            help="請輸入5碼民國年月，例如：11509 代表 115 年 09 月"
         )
-        # 修正2：下拉選單補齊高山等級選項 (高山一級 ~ 高山三級)
         region_lvl = st.selectbox("地加等級類別", [
             "外島第三級(OA3)", "外島第二級(OA2)", "外島第一級(OA1)",
             "離島第三級(OB3)", "離島第二級(OB2)", "離島第一級(OB1)",
@@ -462,21 +488,39 @@ with tab1:
         ])
         
         # 聘雇人員無副食費提醒與介面連動
-        if identity == "聘雇人員":
+        food_identity = st.selectbox("副食費/戰加身分別", ["志願役官士兵", "義務役官士兵", "聘雇人員"])
+        
+        if food_identity == "聘雇人員":
             food_region = st.selectbox("地區性副食費類別", ["無 (聘雇人員不適用)"], disabled=True)
         else:
-            # 修正：補齊 rates.json 定義之傷患對照選項
             food_region = st.selectbox("地區性副食費類別", [
-                "本島", "離島", "外島", "外離島", "東沙", "南沙",
+                "外島", "外離島", "本島", "離島", "東沙", "南沙",
                 "本島傷患", "離島傷患", "外島傷患", "外離島傷患"
             ])
             
-        # 修正：同步提供便利的滑軌 (Slider) 與數字鍵盤支援
-        active_days = st.slider("應支領地域加給/副食費天數", min_value=0, max_value=31, value=13)
+        # 修正：改回 number_input 並提供破月天數提示與九宮格數字鍵盤
+        active_days = st.number_input(
+            "應支領地域加給/副食費天數", 
+            min_value=0, 
+            max_value=31, 
+            value=13,
+            help="💡 破月天數須大於 0 天且小於當月總天數"
+        )
 
     with col2:
-        combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
-        active_combat_days = st.slider("應支領戰加天數", min_value=0, max_value=31, value=13)
+        # 修正：聘雇人員連動自動停用戰鬥加給選項
+        if food_identity == "聘雇人員":
+            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無 (聘雇人員不適用)"], disabled=True)
+        else:
+            combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
+            
+        active_combat_days = st.number_input(
+            "應支領戰加天數", 
+            min_value=0, 
+            max_value=31, 
+            value=13,
+            help="💡 破月天數須大於 0 天且小於當月總天數"
+        )
         
         st.markdown("**【選填】差額分析金額**")
         issued_reg = st.number_input("已發地域加給金額", min_value=0, value=0)
@@ -494,17 +538,17 @@ with tab1:
     """, height=0)
 
     if st.button("🚀 開始計算金額", type="primary", use_container_width=True):
-        # 修正3：修正傳給 calculate_amount_from_format 的關鍵字文字格式，精準符合 Regex 匹配規則
-        target_food_region = "無" if identity == "聘雇人員" else food_region
+        target_food_region = "無" if food_identity == "聘雇人員" else food_region
+        target_combat_lvl = "無" if food_identity == "聘雇人員" else combat_lvl
         fmt_text = f"""支領年月(民國年月)：{month_input}
-身分別：{identity}
+身分別：{reg_identity}
 地加等級類別：{region_lvl}
 地區性副食費類別：{target_food_region}
 應支領天數：{active_days}
 (選填)已發地域加給金額：{issued_reg}
 (選填)已發副食費金額：{issued_food}
 ______________
-戰鬥部隊加給類別：{combat_lvl}
+戰鬥部隊加給類別：{target_combat_lvl}
 應支領戰加天數：{active_combat_days}
 (選填)已發戰加金額：{issued_combat}"""
         
