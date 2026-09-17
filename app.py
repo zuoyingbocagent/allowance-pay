@@ -53,10 +53,9 @@ def normalize_identity(identity_input: str) -> str:
     return identity_input
 
 def find_regional_amount(region_input: str, identity_input: str) -> tuple:
-    """高效解法：提取代碼(OA3/OB1/高山)並直接於 RATES['regional_allowance'] 深度搜尋"""
+    """修復：精準比對 level_name 並完整支援義務役各階級與聘雇人員"""
     identity = normalize_identity(identity_input)
     
-    # 提取代碼如 OA3, OB2 或關鍵字如 高山一級, 本島
     code_match = re.search(r'(O[ABC][1-4]|外島[一二三1-3]級?|離島[一二三1-3]級?|外離島[一二三1-3]級?|高山[一二三四1-4]級?|本島)', region_input, re.IGNORECASE)
     target_key = code_match.group(1).upper() if code_match else region_input.strip()
 
@@ -64,49 +63,54 @@ def find_regional_amount(region_input: str, identity_input: str) -> tuple:
     for reg_group, levels in reg_data.items():
         for level_name, id_map in levels.items():
             if isinstance(id_map, dict):
-                if target_key in level_name.upper() or level_name.upper() in target_key:
-                    # 優先找精準身分，找不到則退回志願役/預設
-                    amount = id_map.get(identity, id_map.get("志願役官士兵", 0))
+                if target_key in level_name.upper() or level_name.upper() in target_key or region_input in level_name:
+                    # 修正1：精準對應身分別（含義務役軍官/士官/士兵及聘雇人員）
+                    amount = id_map.get(identity)
+                    if amount is None:
+                        if "義務役" in identity:
+                            amount = id_map.get("義務役士兵", id_map.get("義務役士官", id_map.get("義務役軍官", 0)))
+                        else:
+                            amount = id_map.get("志願役官士兵", 0)
                     return amount, level_name
     return 0, region_input
 
 def find_food_amount(food_input: str, identity_input: str) -> tuple:
-    """高效解法：精準對應身份別與區域關鍵字"""
+    """修復：按 Key 長度排序優先匹配（解決外離島被誤判為外島問題）"""
     identity = normalize_identity(identity_input)
     if identity == "聘雇人員":
         return 0, "聘雇人員無副食費"
         
     clean_food = food_input.strip()
     subsidy_map = RATES.get("food_subsidy", {})
+
     # 修正1：修正副食費身份別映射，區分義務役官兵與士官
-    
-    # 取得身分對應表
     id_key = "義務役官士兵" if "義務" in identity else "志願役官士兵"
     sub_map = subsidy_map.get(id_key, subsidy_map.get("志願役官士兵", {}))
     
-    for k, v in sub_map.items():
+    # 修正2：由長至短排序 Key，確保「外離島」優先於「外島」與「離島」匹配
+    sorted_keys = sorted(sub_map.keys(), key=len, reverse=True)
+    for k in sorted_keys:
         if k in clean_food or clean_food in k:
-            return v, k
+            return sub_map[k], k
     return 0, food_input
 
 def find_combat_amount(combat_input: str, identity_input: str) -> tuple:
-    """高效解法：提取 V1/V2/V3 代碼進行直接映射"""
+    """修復：正確解析戰鬥加給金額"""
     combat_clean = combat_input.strip().upper()
 
     if combat_clean in ["無", "0", "NONE"]:
         return 0, "無"
 
-    # 提取 V1, V2, V3
     v_match = re.search(r'V[1-3]', combat_clean)
     target_v = v_match.group(0) if v_match else combat_clean
 
     combat_data = RATES.get("combat_unit_allowance", {})
-    # 處理可能存在的層級 (志願役官士兵 -> 第一類型/V1)
     combat_map = combat_data.get("志願役官士兵", combat_data)
 
     for k, v in combat_map.items():
-        if target_v in k.upper() or k.upper() in target_v:
-            return v if isinstance(v, int) else 0, k
+        if target_v in k.upper() or k.upper() in target_v or combat_clean in k.upper():
+            # 修正3：確保取得正確整數金額
+            return (v, k) if isinstance(v, int) else (0, combat_input)
     return 0, combat_input
 
 # ----------------------------------------------------
