@@ -87,7 +87,7 @@ def find_food_amount(food_input: str, identity_input: str) -> tuple:
     id_key = "義務役官士兵" if "義務" in identity else "志願役官士兵"
     sub_map = subsidy_map.get(id_key, subsidy_map.get("志願役官士兵", {}))
     
-    # 修正2：由長至短排序 Key，確保「外離島」優先於「外島」與「離島」匹配
+    # 修正：由長至短排序 Key，確保「本島傷患」、「外離島」等長關鍵字優先精準匹配，避免被「本島」或「外島」截斷
     sorted_keys = sorted(sub_map.keys(), key=len, reverse=True)
     for k in sorted_keys:
         if k in clean_food or clean_food in k:
@@ -359,17 +359,13 @@ def calculate_amount_from_format(user_message: str) -> str:
 
     month_str = month_match.group(1).strip()
     
-    # 由支領年月精準計算當月總天數 (修正年月 parsing 邏輯)
+    # 修正：嚴格限制支領年月必須為固定 5 碼民國數字（如 11509）
+    if not re.fullmatch(r'\d{5}', month_str):
+        return "⚠️ 支領年月格式錯誤！必須為固定 5 碼民國年月數字（例如：11509）。"
+
     try:
-        if len(month_str) == 5: # 民國 11502
-            roc_year = int(month_str[:3])
-            month_num = int(month_str[3:])
-        elif len(month_str) == 6: # 西元 202602
-            roc_year = int(month_str[:4]) - 1911
-            month_num = int(month_str[4:])
-        else:
-            roc_year = int(month_str[:-2]) if len(month_str) > 2 else int(month_str)
-            month_num = int(month_str[-2:]) if len(month_str) > 2 else 1
+        roc_year = int(month_str[:3])
+        month_num = int(month_str[3:])
         total_days = calendar.monthrange(roc_year + 1911, month_num)[1]
     except Exception:
         total_days = 30
@@ -449,8 +445,14 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1:
         identity = st.selectbox("身分別", ["志願役官士兵", "義務役官士兵", "聘雇人員"])
-        # 修正1：預設為系統當前年月
-        month_input = st.text_input("支領年月 (民國年月，如 11502)", value=default_year_month)
+        # 修正：固定民國年月 5 碼數字，限制最大長度 5，設定 help 提示與 placeholder
+        month_input = st.text_input(
+            "支領年月 (固定民國年月5碼)", 
+            value=default_year_month, 
+            max_chars=5, 
+            placeholder="11502",
+            help="請輸入5碼民國年月，例如：11502 代表 115 年 02 月"
+        )
         # 修正2：下拉選單補齊高山等級選項 (高山一級 ~ 高山三級)
         region_lvl = st.selectbox("地加等級類別", [
             "外島第三級(OA3)", "外島第二級(OA2)", "外島第一級(OA1)",
@@ -463,20 +465,33 @@ with tab1:
         if identity == "聘雇人員":
             food_region = st.selectbox("地區性副食費類別", ["無 (聘雇人員不適用)"], disabled=True)
         else:
-            food_region = st.selectbox("地區性副食費類別", ["外離島", "外島", "離島", "本島", "東沙", "南沙"])
+            # 修正：補齊 rates.json 定義之傷患對照選項
+            food_region = st.selectbox("地區性副食費類別", [
+                "本島", "離島", "外島", "外離島", "東沙", "南沙",
+                "本島傷患", "離島傷患", "外島傷患", "外離島傷患"
+            ])
             
-        active_days = st.number_input("應支領地域加給/副食費天數", min_value=0, max_value=31, value=13)
-        # 修正3：整合包含 text 與 number 輸入框的 inputmode="numeric"，完整支援行動裝置 9 宮格數字鍵盤
-        st.html("<script>document.querySelectorAll('input').forEach(el => el.setAttribute('inputmode', 'numeric'));</script>")
+        # 修正：同步提供便利的滑軌 (Slider) 與數字鍵盤支援
+        active_days = st.slider("應支領地域加給/副食費天數", min_value=0, max_value=31, value=13)
 
     with col2:
         combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
-        active_combat_days = st.number_input("應支領戰加天數", min_value=0, max_value=31, value=13)
+        active_combat_days = st.slider("應支領戰加天數", min_value=0, max_value=31, value=13)
         
         st.markdown("**【選填】差額分析金額**")
         issued_reg = st.number_input("已發地域加給金額", min_value=0, value=0)
         issued_food = st.number_input("已發副食費金額", min_value=0, value=0)
         issued_combat = st.number_input("已發戰加金額", min_value=0, value=0)
+    # 修正：注入原生 JS 強制使頁面上所有數字/文字輸入框觸發行動裝置的九宮格數字鍵盤
+    st.components.v1.html("""
+        <script>
+        const inputs = window.parent.document.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.setAttribute('inputmode', 'numeric');
+            input.setAttribute('pattern', '[0-9]*');
+        });
+        </script>
+    """, height=0)
 
     if st.button("🚀 開始計算金額", type="primary", use_container_width=True):
         # 修正3：修正傳給 calculate_amount_from_format 的關鍵字文字格式，精準符合 Regex 匹配規則
@@ -501,8 +516,8 @@ ______________
 
 with tab2:
     st.subheader("🗓️ 輸入變動事件與日期")
-    st.info("提示：可直接輸入說明文字，例如：`7/3離開艱苦地區受訓，8/17結訓抵達艱苦地區`")
-    event_text = st.text_area("請輸入異動說明內容：", value="7/3離開艱苦地區受訓，8/17結訓抵達艱苦地區", height=120)
+    st.info("提示：可直接輸入說明文字，例如：`7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區；9/5結訓，9/6抵達艱苦地區`")
+    event_text = st.text_area("請輸入異動說明內容：", value="7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區", height=120)
     
     if st.button("🔍 計算天數", use_container_width=True):
         days_res = process_days_calculation(event_text)
@@ -511,11 +526,18 @@ with tab2:
 with tab3:
     st.subheader("📊 月支數額對照表")
     st.markdown("""
-    **一、 地域加給 (志願役官士兵/義務役士兵/聘雇)：**
+    **一、 地域加給 (志願役官士兵/聘雇)：**
     * 外島一級(OA1)：$20,000
     * 外島二級(OA2)：$12,000
     * 外島三級(OA3)：$9,790 (聘雇: $7,150)
     * 離島三級(OB3)：$9,790 (聘雇: $7,150)
+    * 本島-非艱苦地區：$0
+
+    **一-1、 地域加給 (義務役士兵)：**
+    * 外島一級(OA1)：$5,460
+    * 外島二級(OA2)：$2,270
+    * 外島三級(OA3)：$1,030
+    * 離島三級(OB3)：$830
     * 本島-非艱苦地區：$0
 
     **二、 戰鬥部隊加給：**
@@ -525,6 +547,8 @@ with tab3:
 
     **三、 地區副食費：**
     * **志願役官士兵**：外島 $2,920 | 本島 $1,790 | 外離島 $3,160 | 離島 $2,120
+                       外島傷$2,510 |本島傷$1,680 |外離島傷$2,690 |離島傷$1,920
     * **義務役官士兵**：外島 $3,429 | 本島 $2,299 | 外離島 $3,669 | 離島 $2,629
+                       外島傷$3,019 |本島傷$2,189 |外離島傷$3,199 |離島傷$2,429
     * **聘雇人員**：不支領副食費
     """)
