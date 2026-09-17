@@ -269,12 +269,15 @@ def extract_events_and_dates(text: str) -> dict:
             has_train = any(k in segment for k in ["受訓", "參訓", "住院", "住軍醫院"])
             has_arr = any(k in segment for k in ["抵達", "抵金", "抵澎", "抵島", "到達", "抵嶼"])
             has_finish = any(k in segment for k in ["結訓", "完訓", "退訓"])
+            has_support = any(k in segment for k in ["支援", "演習", "任務"])
 
             if has_leave:
                 parsed_events["leave_date"] = parsed_dt
             if has_train:
                 parsed_events["train_start_date"] = parsed_dt
-            if has_arr:
+            if has_arr and has_support:
+                parsed_events["support_arr_date"] = parsed_dt
+            elif has_arr:
                 parsed_events["arr_date"] = parsed_dt
             if has_finish:
                 parsed_events["train_end_date"] = parsed_dt
@@ -290,10 +293,11 @@ def process_days_calculation(user_msg: str) -> str:
     
     leave_date = events.get("leave_date")
     train_start_date = events.get("train_start_date")
+    support_arr_date = events.get("support_arr_date")
     arr_date = events.get("arr_date")
     train_end_date = events.get("train_end_date")
 
-    if not leave_date and not train_start_date and not arr_date and not train_end_date:
+    if not leave_date and not train_start_date and not support_arr_date and not arr_date and not train_end_date:
         return "無法辨識日期與相關事由，請重新輸入（例如：2/28離開艱苦地區受訓、1150228離金3-1受訓、或8/17結訓抵金）。"
 
     output = ["【艱苦地區異動之加給與副食費天數結果】\n"]
@@ -340,6 +344,31 @@ def process_days_calculation(user_msg: str) -> str:
         output.append(f"  - {combat_start.month}月加發：{m1_combat_days} 天")
         if m2_combat_days > 0:
             output.append(f"  - {combat_end.month}月加發：{m2_combat_days} 天 (第30日為 {combat_end.month}/{combat_end.day})")
+
+    if support_arr_date:
+        sup_start = support_arr_date
+        sup_end = sup_start + timedelta(days=29)
+        
+        days_in_s1 = calendar.monthrange(sup_start.year, sup_start.month)[1]
+        s1_reg_days = min(days_in_s1 - sup_start.day + 1, 30)
+        s2_reg_days = max(0, 30 - s1_reg_days)
+        
+        output.append(f"\n📌 [支援/演習/任務 抵達艱苦地區階段]")
+        output.append(f"• 抵達艱苦地區日期：{sup_start.month}/{sup_start.day}")
+        output.append(f"• 連續待滿30日審查區間：{sup_start.month}/{sup_start.day} ~ {sup_end.month}/{sup_end.day} (第30日為 {sup_end.month}/{sup_end.day})")
+        output.append(f"⚠️ 【支領門檻提醒】：須於 {sup_end.month}/{sup_end.day} 待滿30日當日起始可追溯發放！未待滿30日前不得發放。")
+        
+        output.append(f"\n🔹 追溯支領地域加給天數 (待滿後追溯補發)：")
+        output.append(f"  - {sup_start.month}月追溯補發：{s1_reg_days} 天")
+        if s2_reg_days > 0:
+            output.append(f"  - {sup_end.month}月追溯補發：{s2_reg_days} 天")
+            
+        orig_food_days_sup = sup_start.day - 1
+        new_food_days_sup = days_in_s1 - sup_start.day + 1
+        output.append(f"\n🔹 地區性副食費 (抵達當日起改支領抵達地區副食費)：")
+        output.append(f"  - 抵達之日期：{sup_start.month}/{sup_start.day}")
+        output.append(f"  - {sup_start.month}月原地區副食費發：{orig_food_days_sup}天")
+        output.append(f"  - {sup_start.month}月新地區副食費發：{new_food_days_sup}天")
 
     if arr_date or train_end_date:
         output.append(f"\n📌 [結訓返回艱苦地區階段]")
