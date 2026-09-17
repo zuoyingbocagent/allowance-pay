@@ -4,7 +4,7 @@ import re
 import math
 import calendar
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 # ----------------------------------------------------
 # 0. Streamlit 頁面基礎設定
@@ -429,11 +429,15 @@ tab1, tab2, tab3 = st.tabs(["💰 破月金額試算", "📅 異動天數計算"
 
 with tab1:
     st.subheader("📋 輸入試算條件")
+    # 取得系統當前年月 (民國年月)
+    now = datetime.now()
+    default_year_month = f"{now.year - 1911}{now.month:02d}"
     
     col1, col2 = st.columns(2)
     with col1:
         identity = st.selectbox("身分別", ["志願役官士兵", "義務役官士兵", "聘雇人員"])
-        month_input = st.text_input("支領年月 (民國年月，如 11502)", "11502")
+        # 修正1：預設為系統當前年月
+        month_input = st.text_input("支領年月 (民國年月，如 11502)", value=default_year_month)
         region_lvl = st.selectbox("地加等級類別", [
             "外島第三級(OA3)", "外島第二級(OA2)", "外島第一級(OA1)", 
             "離島第三級(OB3)", "離島第二級(OB2)", "離島第一級(OB1)", "本島-非艱苦地區"
@@ -445,7 +449,9 @@ with tab1:
         else:
             food_region = st.selectbox("地區性副食費類別", ["外離島", "外島", "離島", "本島", "東沙", "南沙"])
             
+        # 修正2：整合 HTML inputmode 屬性以支援行動裝置大數字 9 宮格鍵盤
         active_days = st.number_input("應支領地域加給/副食費天數", min_value=0, max_value=31, value=13)
+        st.html("<script>document.querySelectorAll('input[type=number]').forEach(el => el.setAttribute('inputmode', 'numeric'));</script>")
 
     with col2:
         combat_lvl = st.selectbox("戰鬥部隊加給類別", ["無", "戰鬥部隊第一類型(V1)", "戰鬥部隊第二類型(V2)", "戰鬥部隊第三類型(V3)"])
@@ -457,17 +463,19 @@ with tab1:
         issued_combat = st.number_input("已發戰加金額", min_value=0, value=0)
 
     if st.button("🚀 開始計算金額", type="primary", use_container_width=True):
-        fmt_text = f"""支領年月：{month_input}
+        # 修正3：修正傳給 calculate_amount_from_format 的關鍵字文字格式，精準符合 Regex 匹配規則
+        target_food_region = "無" if identity == "聘雇人員" else food_region
+        fmt_text = f"""支領年月(民國年月)：{month_input}
 身分別：{identity}
 地加等級類別：{region_lvl}
-地區性副食費類別：{food_region}
+地區性副食費類別：{target_food_region}
 應支領天數：{active_days}
-已發地域加給金額：{issued_reg}
-已發副食費金額：{issued_food}
+(選填)已發地域加給金額：{issued_reg}
+(選填)已發副食費金額：{issued_food}
 ______________
 戰鬥部隊加給類別：{combat_lvl}
 應支領戰加天數：{active_combat_days}
-已發戰加金額：{issued_combat}"""
+(選填)已發戰加金額：{issued_combat}"""
         
         res = calculate_amount_from_format(fmt_text)
         if res:
