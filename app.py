@@ -609,11 +609,11 @@ with tab2:
     st.subheader("🗓️ 輸入變動事件與日期")
     st.info("提示：可直接輸入說明文字，例如：`7/3離開艱苦地區，7/4受訓，8/17結訓抵達艱苦地區；9/5結訓，9/6抵達艱苦地區；9/14因支援抵達艱苦地區`")
     event_text = st.text_area("請輸入異動說明內容：", value="""7/3離開艱苦地區，
-                                                               7/4受訓，
-                                                               8/17結訓，
-                                                               8/18抵達艱苦地區，
-                                                               9/14因支援抵達艱苦地區
-                                                               請修正填入實際狀況""", height=120)
+7/4受訓，
+8/17結訓，
+8/18抵達艱苦地區，
+9/14因支援抵達艱苦地區
+請修正填入實際狀況""", height=120)
     
     if st.button("🔍 計算天數", use_container_width=True):
         days_res = process_days_calculation(event_text)
