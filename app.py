@@ -3,6 +3,7 @@ import json
 import re
 import math
 import calendar
+from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 from datetime import datetime, date, timedelta
 
@@ -160,7 +161,8 @@ def calc_round_allowance(monthly_amount: int, total_days: int, active_days: int)
     """薪餉與戰鬥加給破月計算：round(月支額 ÷ 當月天數) × 應領天數"""
     if monthly_amount == 0 or active_days == 0:
         return 0, 0, "0"
-    daily_rate = round(monthly_amount / total_days)
+    raw_daily = Decimal(str(monthly_amount)) / Decimal(str(total_days))
+    daily_rate = int(raw_daily.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     final_amount = daily_rate * active_days
     formula_str = f"四捨五入({monthly_amount:,} ÷ {total_days}) × {active_days} = {daily_rate:,} × {active_days}"
     return final_amount, daily_rate, formula_str
@@ -171,8 +173,10 @@ def calc_food_subsidy(monthly_amount: int, total_days: int, active_days: int):
         return 0, "0"
     raw_val = monthly_amount / total_days * active_days
     val_2dp = math.floor(raw_val * 100) / 100.0
-    val_1dp = round(val_2dp, 1)
-    val_int = int(round(val_1dp))
+    d_2dp = Decimal(str(val_2dp))
+    val_1dp = float(d_2dp.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
+    d_1dp = Decimal(str(val_1dp))
+    val_int = int(d_1dp.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     formula_str = f"({monthly_amount:,} ÷ {total_days} × {active_days}) = {raw_val:.3f}... 無條件捨去取小數第2位→ {val_2dp:.2f} 小數點第2位四捨五入至小數點第1位→ {val_1dp:.1f} 小數點第1位四捨五入至整數→ {val_int:,}"
     return val_int, formula_str
 
